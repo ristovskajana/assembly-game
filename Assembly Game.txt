@@ -1,0 +1,366 @@
+; Tic Tac Toe
+; Instead of X and 0, we have Red and Blue squares
+; Each playing cell on the screen is asociated with a key from the key panel
+; Once you press a key and assign a lolor to the cell, you cannot change it
+; Press '*' to restart the game
+; Press '+' to exit the game
+
+
+    JMP boot
+    
+; ------------------------------------------------------------------------------
+   
+    JMP isr
+    
+; ------------------------------------------------------------------------------
+
+; System variables.
+
+status:
+    DB 0    ; ; 0 - waiting, 1 - timer , 2 - key, 4 - reset, 8 - exit
+key:
+    DB 0    ; The number of the last key that was pressed.
+    
+; The background is white and the black lines seperate each cell
+
+image:
+DB "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF"
+DB "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
+
+cell_1: DW 0x0F22    ;First pixel of the 1st cell
+cell_2: DW 0x0F27    ;First pixel of the 2nd cell
+cell_3: DW 0x0F2C    ;First pixel of the 3rd cell
+cell_4: DW 0x0F72    ;First pixel of the 4th cell
+cell_5: DW 0x0F77    ;First pixel of the 5th cell
+cell_6: DW 0x0F7C    ;First pixel of the 6th cell
+cell_7: DW 0x0FC2    ;First pixel of the 7th cell
+cell_8: DW 0x0FC7    ;First pixel of the 8th cell
+cell_9: DW 0x0FCC    ;First pixel of the 9th cell
+
+
+blue: DB "\x23"      ; Blue color value
+red:  DB "\xC4"      ; Red color value
+
+moves: DW 0          ; Counter for number of moves (max value = 9)
+
+; initial value of a "counter" for how many times a key has been pressed
+; The game allows a cell to be colored only the button hasn't been pressed
+; before ( if the counter is 0)
+
+painted_1: DW 0
+painted_2: DW 0
+painted_3: DW 0
+painted_4: DW 0
+painted_5: DW 0
+painted_6: DW 0
+painted_7: DW 0
+painted_8: DW 0
+painted_9: DW 0
+
+
+gameover: DB "   GAME OVER!   "
+           DB 0
+
+
+; ------------------------------------------------------------------------------
+
+    
+boot:
+	MOV SP, 0x0EDF      ; Initialize stack.
+    MOV A, 8192         ; Set timer period.
+    OUT 3
+    MOV A, 3            ; Set interrupt for keyboard and timer.
+    OUT 0
+    STI                 ; Enable interrupts.
+    JMP game_start      ; Start the game.
+    
+
+; ------------------------------------------------------------------------------
+
+
+; Before shutting down, we just need to clear interrupts.
+shutdown:
+    CLI
+    HLT
+
+
+; ------------------------------------------------------------------------------
+
+isr:
+    PUSH A              ; We need register A for I/O operations.
+    PUSH B              ; We need register B to change status.
+    IN 1                ; Check which interrupt happened.
+    AND A, 1            ; Mask the keyboard bit.
+    CMP A, 1            ; Is it keyboard?
+    JNE chtimer         ; If not, check timer.
+    IN 6                ; Read the key.
+chkreset:
+    CMP A, 0x2A         ; Check if reset.
+    JNE chkexit
+    MOVB BL, [status]   ; Set reset status.
+    ORB BL, 4
+    MOVB [status], BL
+    JMP setkeyhandelled ; No need to store the key code.
+chkexit:
+    CMP A, 0x2B         ; Check if exit.
+    JNE storekey
+    MOVB BL, [status]   ; Set exit status.
+    ORB BL, 8
+    MOVB [status], BL
+    JMP setkeyhandelled ; No need to store the key code
+storekey:
+    SUB A, 0x30         ; Translate key code to key number.
+    MOVB [key], AL      ; Store the key.
+    MOVB BL, [status]   ; Set key pressed status.
+    ORB BL, 2
+    MOVB [status], BL
+setkeyhandelled:
+    MOV A, 1            ; Set keyboard interrupt handelled.
+    OUT 2
+chtimer:
+    IN 1                ; Check which interrupt happened.
+    AND A, 2            ; Mask the timer bit.
+    CMP A, 2            ; Is it timer?
+    JNE isrexit         ; If not, exit ISR.
+    MOVB BL, [status]   ; Set timer status.
+    ORB BL, 1
+    MOVB [status], BL
+    MOV A, 2            ; Set timer interrupt handelled.
+    OUT 2
+isrexit:
+    POP B               ; Restore register B.
+    POP A               ; Restore register A.
+    IRET                ; Return from ISR.
+
+
+; ------------------------------------------------------------------------------
+
+
+game_start:
+    CALL reset_game
+game_loop:
+    MOVB AL, [status]   ; Check if key was pressed.
+    ANDB AL, 2          ; Mask the key bit.
+    CMPB AL, 2          ; Check if key bit set.
+    JE game_key
+    MOVB AL, [status]   ; Check if the game should be reset.
+    ANDB AL, 4          ; Mask the reset bit.
+    CMPB AL, 4          ; Check if reset bit set.
+    JE game_start
+    MOVB AL, [status]   ; Check if the game should be running.
+    ANDB AL, 8          ; Mask the exit bit.
+    CMPB AL, 8          ; Check if exit bit set.
+    JE shutdown
+    JMP game_loop
+game_key:
+    CALL turn           ; Call function that check which key was pressed
+    MOVB AL, [status]   ; Clear key status.
+    ANDB AL, 0xFD
+    MOVB [status], AL
+    JMP game_loop
+    
+    
+; ------------------------------------------------------------------------------
+
+
+reset_game:
+	MOV D, display_start    ; The address of the first pixel.
+	MOV B, 0x0F00           ; Start of video memory.
+    MOVB [status], 0        ; Reset game status.
+    MOV A, image
+    MOVB BL, [blue]
+	draw_image:
+	CMP D, display_end      ; Fill the whole display.
+	JA draw_image_return
+	MOVB CL, [A]            ; Get the color of the pixel.
+	MOVB [D], CL            ; Set the pixel color.
+	INC A                   ; Next color.
+	INC D                   ; Next pixel.
+	JMP draw_image
+	draw_image_return:
+    MOV [painted_1], 0      ; Reset all counters to 0
+    MOV [painted_2], 0      ; So if a key was pressed before 
+    MOV [painted_3], 0      ; the game was restored
+    MOV [painted_4], 0      ; This way the cells will be able to
+    MOV [painted_5], 0      ; be colored
+    MOV [painted_6], 0
+    MOV [painted_7], 0
+    MOV [painted_8], 0
+    MOV [painted_9], 0
+    MOV [moves], 0          ; Restore number of moves to 0
+	RET                     ; Nothing to return.
+    
+    
+; ------------------------------------------------------------------------------ 
+    
+    
+color:
+    INC D                ; Increase the number of moves
+    MOV [moves], D       ; And store it right back
+    MOV D, 0
+    MOVB DL, [blue]      ; Initial color is blue  
+    MOVB [C], BL         ; Color 1st pixel of the cell
+    ADD C, 1
+    MOVB [C], BL         ; And the one next to it
+    ADD C, 15
+    MOVB [C], BL         ; And the pixel one line below the 1st pixel
+    ADD C, 1
+    MOVB [C], BL         ; And the second pixel in the second line
+    ; This way we dont just color one pixel, but 4 to make a square
+    CMPB DL, BL          ; Check if the color that we painted with is blue
+    JE paint_red         ; If yes then we change it to red
+    MOVB BL, [blue]      ; If not we change the color to blue
+    RET
+paint_red:
+    MOVB BL, [red]       ; If it was blue, we change it to red
+    RET
+    
+    
+; ------------------------------------------------------------------------------
+
+
+turn:
+    MOVB AL, [key]           ; Store the value of the key that was pressed
+    MOV D, [moves]           ; Get the number of moves
+    CMP D, 9                 ; If number of moves is larger than 9, end game
+    JAE game_over            ; since we have only 9 cells
+nu1:
+    CMPB AL, 7               ; Check if 1st cell 
+    JNE nu2                  ; If not proceed to check other cells
+    MOVB AH, [painted_1]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu2                  
+    INCB AH                  ; If not, increase counter to disable painting 
+    MOVB [painted_1], AH   
+    MOV C, [cell_1]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key             
+nu2:
+    CMPB AL, 8               ; Check if 2nd cell
+    JNE nu3                  ; If not proceed to check other cells
+    MOVB AH, [painted_2]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu3
+    INCB AH
+    MOVB [painted_2], AH
+    MOV C, [cell_2]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu3:
+    CMPB AL, 9               ; Check if 3rd cell
+    JNE nu4                  ; If not proceed to check other cells
+    MOVB AH, [painted_3]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu4
+    INCB AH                  ; If not, increase counter to disable painting 
+    MOVB [painted_3], AH
+    MOV C, [cell_3]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu4:
+    CMPB AL, 4               ; Check if 4th cell
+    JNE nu5                  ; If not proceed to check other cells
+    MOVB AH, [painted_4]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu5
+    INCB AH                  ; If not, increase counter to disable painting  
+    MOVB [painted_4], AH
+    MOV C, [cell_4]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu5:
+    CMPB AL, 5               ; Check if 5th cell
+    JNE nu6                  ; If not proceed to check other cells
+    MOVB AH, [painted_5]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu6
+    INCB AH                  ; If not, increase counter to disable painting  
+    MOVB [painted_5], AH
+    MOV C, [cell_5]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu6:
+    CMPB AL, 6               ; Check if 6th cell
+    JNE nu7                  ; If not proceed to check other cells
+    MOVB AH, [painted_6]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu7
+    INCB AH                  ; If not, increase counter to disable painting  
+    MOVB [painted_6], AH
+    MOV C, [cell_6]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu7:
+    CMPB AL, 1               ; Check if 7th cell
+    JNE nu8                  ; If not proceed to check other cells
+    MOVB AH, [painted_7]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu8
+    INCB AH                  ; If not, increase counter to disable painting  
+    MOVB [painted_7], AH
+    MOV C, [cell_7]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu8:
+    CMPB AL, 2               ; Check if 8th cell
+    JNE nu9                  ; If not proceed to check other cells
+    MOVB AH, [painted_8]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE nu9
+    INCB AH                  ; If not, increase counter to disable painting  
+    MOVB [painted_8], AH
+    MOV C, [cell_8]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+nu9:
+    CMPB AL, 3               ; Check if 9th cell
+    JNE turnexit             ; If not return form function
+    MOVB AH, [painted_9]
+    CMPB AH, 0               ; Check if that cell has already been painted
+    JNE turnexit
+    INCB AH                  ; If not, increase counter to disable painting  
+    MOVB [painted_9], AH
+    MOV C, [cell_9]
+    CALL color               ; Call function to paint the cell
+    CALL turnexit            ; After that exit, and proceed to next pressed key 
+turnexit:
+    RET
+
+    
+; ------------------------------------------------------------------------------
+
+
+game_over:
+    MOV D, 0x0EE0           ; Pointer to text display cell.
+    MOV C, gameover         ; Pointer to the first character.
+game_over_loop:
+    MOVB AL, [C]            ; Get the character.
+    CMPB AL, 0              ; Check if at the end of the string.
+    JE shutdown             ; If yes, return.
+    MOVB [D], AL            ; Print the character.
+    INC C                   ; Next character.
+    INC D                   ; Next text display cell.
+    JMP game_over_loop
+    
+    
+; ------------------------------------------------------------------------------
+
+
+org 0x0F00             
+display_start:
+org 0x0FFF
+display_end:
